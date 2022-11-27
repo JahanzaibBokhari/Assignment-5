@@ -185,7 +185,7 @@ app.get("/employee/:employeeNum", function (req, res) {
       if (viewData.employee == null) { // if no employee - return an error
         res.status(404).send("Employee Not Found");
       } else {
-        console.log(viewData)
+        //console.log(viewData)
         res.render("employee", { viewData: viewData });
       }
     });
