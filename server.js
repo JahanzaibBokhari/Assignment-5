@@ -21,6 +21,10 @@ const exphbs = require("express-handlebars");
 app.engine('.hbs', exphbs.engine({
   extname: '.hbs',
   defaultLayout: 'main',
+  runtimeOptions: {
+    allowProtoPropertiesByDefault: true,
+    allowProtoMethodsByDefault: true,
+  },
   helpers: {
     navLink: function (url, options) {
       return '<li' + ((url == app.locals.activeRoute) ? ' class="active" ' : '') + '><a href=" ' + url + ' ">' + options.fn(this) + '</a></li>';
@@ -64,25 +68,29 @@ app.use(function (req, res, next) {
 
 // setup a 'route' to listen on the default url path
 app.get("/", function (req, res) {
-  //res.sendFile(path.join(__dirname, "/views/home.html"));
   res.render(path.join(__dirname, "/views/home"));
 });
 
 // setup a 'route' to listen on the /about url path
 app.get("/about", function (req, res) {
-  //res.sendFile(path.join(__dirname, "/views/about.html"));
   res.render(path.join(__dirname, "/views/about"));
 });
 
 // setup a 'route' to listen on the /employees/add url path
 app.get("/employees/add", function (req, res) {
-  //res.sendFile(path.join(__dirname, "/views/addEmployee.html"));
-  res.render(path.join(__dirname, "/views/addEmployee"));
+
+  data_service.getDepartments()
+    .then(function (data) {
+      res.render(path.join(__dirname, "/views/addEmployee"), { departments: data });
+    })
+    .catch(function (reason) {
+      res.render(path.join(__dirname, "/views/addEmployee"), { departments: [] });
+    });
+
 });
 
 // setup a 'route' to listen on the /images/add url path
 app.get("/images/add", function (req, res) {
-  //res.sendFile(path.join(__dirname, "/views/addImage.html"));
   res.render(path.join(__dirname, "/views/addImage"));
 });
 
@@ -92,7 +100,10 @@ app.get("/employees", function (req, res) {
   if (req.query.status) {
     data_service.getEmployeesByStatus(req.query.status)
       .then(function (data) {
-        res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        if (data.length > 0)
+          res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        else
+          res.render(path.join(__dirname, "/views/employees"), { message: "no results" });
       })
       .catch(function (reason) {
         var message = { "message": reason };
@@ -102,7 +113,10 @@ app.get("/employees", function (req, res) {
   else if (req.query.department) {
     data_service.getEmployeesByDepartment(req.query.department)
       .then(function (data) {
-        res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        if (data.length > 0)
+          res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        else
+          res.render(path.join(__dirname, "/views/employees"), { message: "no results" });
       })
       .catch(function (reason) {
         var message = { "message": reason };
@@ -112,7 +126,10 @@ app.get("/employees", function (req, res) {
   else if (req.query.manager) {
     data_service.getEmployeesByManager(req.query.manager)
       .then(function (data) {
-        res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        if (data.length > 0)
+          res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        else
+          res.render(path.join(__dirname, "/views/employees"), { message: "no results" });
       })
       .catch(function (reason) {
         var message = { "message": reason };
@@ -122,7 +139,12 @@ app.get("/employees", function (req, res) {
   else {
     data_service.getAllEmployees()
       .then(function (data) {
-        res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        if (data.length > 0) {
+          //console.log(data);
+          res.render(path.join(__dirname, "/views/employees"), { employees: data });
+        }
+        else
+          res.render(path.join(__dirname, "/views/employees"), { message: "no results" });
       })
       .catch(function (reason) {
         var message = { "message": reason };
@@ -135,13 +157,50 @@ app.get("/employees", function (req, res) {
 //setup a route for Employee/value
 app.get("/employee/:employeeNum", function (req, res) {
 
-  data_service.getEmployeesByNum(req.params.employeeNum)
-    .then(function (data) {
-      res.render("employee", { employee: data });
-    })
-    .catch(function (reason) {
-      var message = { "message": reason };
-      res.render(path.join(__dirname, "/views/employee"), message);
+  // initialize an empty object to store the values
+  let viewData = {};
+  data_service.getEmployeesByNum(req.params.employeeNum).then((data) => {
+    if (data) {
+      viewData.employee = data; //store employee data in the "viewData" object as "employee"
+    } else {
+      viewData.employee = null; // set employee to null if none were returned
+    }
+  }).catch(() => {
+    viewData.employee = null; // set employee to null if there was an error 
+  }).then(data_service.getDepartments)
+    .then((data) => {
+      viewData.departments = data; // store department data in the "viewData" object as "departments"
+      // loop through viewData.departments and once we have found the departmentID that matches
+      // the employee's "department" value, add a "selected" property to the matching 
+      // viewData.departments object
+
+      for (let i = 0; i < viewData.departments.length; i++) {
+        if (viewData.departments[i].departmentID == viewData.employee.department) {
+          viewData.departments[i].selected = true;
+        }
+      }
+    }).catch(() => {
+      viewData.departments = []; // set departments to empty if there was an error
+    }).then(() => {
+      if (viewData.employee == null) { // if no employee - return an error
+        res.status(404).send("Employee Not Found");
+      } else {
+        console.log(viewData)
+        res.render("employee", { viewData: viewData });
+      }
+    });
+
+});
+
+//delete employee by num
+
+app.get("/employees/delete/:employeeNum", function (req, res) {
+
+  data_service.deleteEmployeesByNum(req.params.employeeNum)
+    .then(function () {
+      res.redirect("/employees");
+    }).catch(function (error) {
+      res.status(500).send(error);
     });
 
 });
@@ -151,7 +210,10 @@ app.get("/departments", function (req, res) {
 
   data_service.getDepartments()
     .then(function (data) {
-      res.render(path.join(__dirname, "/views/departments"), { departments: data });
+      if (data.length > 0)
+        res.render(path.join(__dirname, "/views/departments"), { departments: data });
+      else
+        res.render(path.join(__dirname, "/views/departments"), { message: "no results" });
     })
     .catch(function (reason) {
       var message = { "message": reason };
@@ -173,13 +235,9 @@ app.get("/images", function (req, res) {
         items.forEach(file => {
           allImages.images.push(file);
         })
-
         resolve(allImages)
-
       }
-
     });
-
   });
 
   readDirectory
@@ -206,7 +264,7 @@ app.post("/employees/add", upload.none(), (req, res) => {
       res.redirect("/employees");
     })
     .catch(function (reason) {
-
+      res.status(500).send(reason);
     });
 
 });
@@ -214,13 +272,69 @@ app.post("/employees/add", upload.none(), (req, res) => {
 //update employee
 app.post("/employee/update", (req, res) => {
   //console.log(req.body);
- 
+
   data_service.updateEmployee(req.body)
     .then(function (data) {
       res.redirect("/employees");
     })
-  
+    .catch(function (reason) {
+      res.status(500).send(reason);
+    });
+
 });
+
+//------------------ Department routes --------------------------
+
+// setup a 'route' to listen on the /departments/add url path
+app.get("/departments/add", function (req, res) {
+  res.render(path.join(__dirname, "/views/addDepartment"));
+});
+
+//add department
+app.post("/departments/add", upload.none(), (req, res) => {
+
+  data_service.addDepartment(req.body)
+    .then(function (data) {
+      res.redirect("/departments");
+    })
+    .catch(function (reason) {
+      res.status(404).send(reason);
+    });
+
+});
+
+//update department
+app.post("/department/update", (req, res) => {
+
+  data_service.updateDepartment(req.body)
+    .then(function (data) {
+      res.redirect("/departments");
+    })
+    .catch(function (reason) {
+      res.status(404).send(reason);
+    });
+
+});
+
+//setup a route for Department/value
+app.get("/department/:departmentID", function (req, res) {
+
+  data_service.getDepartmentById(req.params.departmentID)
+    .then(function (data) {
+      if (typeof data === "undefined") {
+        res.status(404).send("Department Not Found");
+      }
+      else {
+        res.render("department", { department: data });
+      }
+    })
+    .catch(function (reason) {
+      res.status(404).send("Department Not Found");
+    });
+
+});
+
+//------------------ Department routes end ----------------------
 
 //page not found
 app.use((req, res) => {
